@@ -35,8 +35,12 @@ class Generator(torch.nn.Module):
             nn.BatchNorm2d(num_features=256),
             nn.ReLU(True),
 
+            nn.ConvTranspose2d(in_channels=256, out_channels=128, kernel_size=4, stride=2, padding=1),
+            nn.BatchNorm2d(num_features=128),
+            nn.ReLU(True),
+
             # State (256x16x16)
-            nn.ConvTranspose2d(in_channels=256, out_channels=channels, kernel_size=4, stride=2, padding=1))
+            nn.ConvTranspose2d(in_channels=128, out_channels=channels, kernel_size=4, stride=2, padding=1))
             # output of main module --> Image (Cx32x32)
 
         self.output = nn.Tanh()
@@ -57,7 +61,11 @@ class Discriminator(torch.nn.Module):
             # in this setting, since we penalize the norm of the critic's gradient with respect to each input independently and not the enitre batch.
             # There is not good & fast implementation of layer normalization --> using per instance normalization nn.InstanceNorm2d()
             # Image (Cx32x32)
-            nn.Conv2d(in_channels=channels, out_channels=256, kernel_size=4, stride=2, padding=1),
+            nn.Conv2d(in_channels=channels, out_channels=128, kernel_size=4, stride=2, padding=1),
+            nn.InstanceNorm2d(128, affine=True),
+            nn.LeakyReLU(0.2, inplace=True),
+
+            nn.Conv2d(in_channels=128, out_channels=256, kernel_size=4, stride=2, padding=1),
             nn.InstanceNorm2d(256, affine=True),
             nn.LeakyReLU(0.2, inplace=True),
 
@@ -101,7 +109,7 @@ class WGAN_GP(object):
         self.learning_rate = 1e-4
         self.b1 = 0.5
         self.b2 = 0.999
-        self.batch_size = 64
+        self.batch_size = 32
 
         # WGAN_gradient penalty uses ADAM
         self.d_optimizer = optim.Adam(self.D.parameters(), lr=self.learning_rate, betas=(self.b1, self.b2))
@@ -262,7 +270,7 @@ class WGAN_GP(object):
                 }
 
                 for tag, value in info.items():
-                    self.logger.scalar_summary(tag, value.cpu(), g_iter + 1)
+                    self.logger.scalar_summary(tag, value.detach().cpu(), g_iter + 1)
 
                 # (3) Log the images
                 info = {
@@ -282,15 +290,17 @@ class WGAN_GP(object):
         # Save the trained parameters
         self.save_model()
 
-    def evaluate(self, test_loader, D_model_path, G_model_path):
+    def evaluate(self, test_loader, D_model_path, G_model_path,number):
+        if not os.path.exists('generated_images/'):
+                    os.makedirs('generated_images/')
         self.load_model(D_model_path, G_model_path)
-        z = self.get_torch_variable(torch.randn(self.batch_size, 100, 1, 1))
+        z = self.get_torch_variable(torch.randn(64, 100, 1, 1))
         samples = self.G(z)
         samples = samples.mul(0.5).add(0.5)
         samples = samples.data.cpu()
         grid = utils.make_grid(samples)
         print("Grid of 8x8 images saved to 'dgan_model_image.png'.")
-        utils.save_image(grid, 'dgan_model_image.png')
+        utils.save_image(grid, 'generated_images/generated_{}.png'.format(str(number).zfill(3)))
 
 
     def calculate_gradient_penalty(self, real_images, fake_images):
@@ -329,18 +339,18 @@ class WGAN_GP(object):
 
     def real_images(self, images, number_of_images):
         if (self.C == 3):
-            return self.to_np(images.view(-1, self.C, 32, 32)[:self.number_of_images])
+            return self.to_np(images.view(-1, self.C, 64, 64)[:self.number_of_images])
         else:
-            return self.to_np(images.view(-1, 32, 32)[:self.number_of_images])
+            return self.to_np(images.view(-1, 64, 64)[:self.number_of_images])
 
     def generate_img(self, z, number_of_images):
         samples = self.G(z).data.cpu().numpy()[:number_of_images]
         generated_images = []
         for sample in samples:
             if self.C == 3:
-                generated_images.append(sample.reshape(self.C, 32, 32))
+                generated_images.append(sample.reshape(self.C, 64, 64))
             else:
-                generated_images.append(sample.reshape(32, 32))
+                generated_images.append(sample.reshape(64, 64))
         return generated_images
 
     def to_np(self, x):
@@ -387,7 +397,7 @@ class WGAN_GP(object):
             alpha += alpha
             fake_im = self.G(z_intp)
             fake_im = fake_im.mul(0.5).add(0.5) #denormalize
-            images.append(fake_im.view(self.C,32,32).data.cpu())
+            images.append(fake_im.view(self.C,64,64).data.cpu())
 
         grid = utils.make_grid(images, nrow=number_int )
         utils.save_image(grid, 'interpolated_images/interpolated_{}.png'.format(str(number).zfill(3)))

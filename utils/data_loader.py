@@ -23,6 +23,16 @@ def get_data_loader(args):
         ])
         train_dataset = FashionMNIST(root=args.dataroot, train=True, download=args.download, transform=trans)
         test_dataset = FashionMNIST(root=args.dataroot, train=False, download=args.download, transform=trans)
+    
+    elif args.dataset == 'ciliate':
+        trans = transforms.Compose([
+            # transforms.Resize(64),
+            transforms.ToTensor(),
+            transforms.Grayscale(num_output_channels=1),
+            transforms.Normalize((0.5, ), (0.5, )),
+        ])
+        train_dataset = dset.ImageFolder(root=args.dataroot, transform=trans)
+        test_dataset = dset.ImageFolder(root=args.dataroot, transform=trans)
 
     elif args.dataset == 'cifar':
         trans = transforms.Compose([
